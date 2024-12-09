@@ -10,7 +10,7 @@ app = Flask(__name__)
 flooring_data = pd.read_csv('sample_flooring_products.csv')
 
 # Set up OpenAI API key (I provided mine in case you don't have one)
-openai.api_key = "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"
+openai.api_key = os.getenv("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")
 
 @app.route('/chat', methods=['POST'])
 def chat():
