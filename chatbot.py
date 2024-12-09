@@ -1,67 +1,63 @@
-from flask import Flask, request, jsonify
 import pandas as pd
-import openai
 import os
+from flask import Flask, request, jsonify
 from flask_cors import CORS
+import re
+import spacy
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
-# Load your flooring data
+# Load your flooring data from CSV
 flooring_data = pd.read_csv('sample_flooring_products.csv')
 
-# Set up OpenAI API key (I provided mine in case you don't have one)
-openai.api_key = os.getenv("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")
+# Load SpaCy NLP model for better understanding (you can expand it for more complex queries)
+nlp = spacy.load("en_core_web_sm")
 
 @app.route('/chat', methods=['POST'])
 def chat():
     user_input = request.json.get('message', '').lower()
     response = ""
 
-    # Parse user input using GPT for intent recognition
-    try:
-        gpt_response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a natural language processor. Extract intents from user input related to flooring products, installation costs, or general questions."},
-                {"role": "user", "content": f"Extract intent: {user_input}"}
-            ],
-            max_tokens=100,
-            temperature=0.3
-        )
-        intent = gpt_response['choices'][0]['message']['content'].strip().lower()
+    # Use SpaCy to process user input and extract information
+    doc = nlp(user_input)
 
-    except Exception as e:
-        response = "Sorry, I couldn't understand your request. Please try again."
-        return jsonify({"response": response})
-
-    # Handling intents based on extracted input
-    if "flooring types" in intent or "products" in intent:
-        # Return list of flooring types
+    # Handle 'flooring types' request
+    if "flooring types" in user_input or "types" in user_input:
         flooring_types = flooring_data['Type'].unique()
         response = f"We offer the following flooring types: {', '.join(flooring_types)}."
 
-    elif "price" in intent or "cost" in intent:
-        # Extract flooring type and area size for cost calculation
+    # Handle 'products under type' request
+    elif "products" in user_input or "show me" in user_input:
+        flooring_type = None
+        # Search for flooring type mentioned in the input (e.g., "hardwood")
+        for type_ in flooring_data['Type'].unique():
+            if type_.lower() in user_input:
+                flooring_type = type_
+                break
+
+        if flooring_type:
+            products = flooring_data[flooring_data['Type'].str.lower() == flooring_type.lower()]['Product Name']
+            response = f"Here are the {flooring_type} products: {', '.join(products)}."
+        else:
+            response = "Please specify the flooring type (e.g., Hardwood, Tile, Carpet)."
+
+    # Handle price and installation cost queries
+    elif "cost" in user_input or "price" in user_input:
         flooring_type = None
         area_size = None
 
-        # Use GPT to extract flooring type and area size from user input
-        try:
-            extraction_response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "Extract flooring type and area size from the user's message."},
-                    {"role": "user", "content": user_input}
-                ],
-                max_tokens=50,
-                temperature=0.3
-            )
-            extracted_data = extraction_response['choices'][0]['message']['content'].strip()
-            # Example output: "Flooring type: Hardwood, Area size: 600 sq ft"
-            flooring_type = extracted_data.split(",")[0].split(":")[-1].strip().lower()
-            area_size = int(extracted_data.split(",")[1].split(":")[-1].strip().split()[0])
-        except:
-            response = "Please specify the flooring type and the size of the area in square feet."
+        # Use regex to extract flooring type and area size (sq ft)
+        flooring_match = re.search(r'(hardwood|bamboo|tile|carpet|vinyl|stone)', user_input)
+        area_match = re.search(r'(\d+)\s*sq\s*ft', user_input)
+
+        if flooring_match:
+            flooring_type = flooring_match.group(1).lower()
+        if area_match:
+            area_size = int(area_match.group(1))
+
+        if not flooring_type or not area_size:
+            response = "Please specify both the flooring type and the area size in square feet."
             return jsonify({"response": response})
 
         # Find the flooring type in the CSV
@@ -69,16 +65,16 @@ def chat():
         if product.empty:
             response = f"Sorry, we don't have flooring type '{flooring_type}'. Please choose from {', '.join(flooring_data['Type'].unique())}."
         else:
-            # Calculate cost
+            # Calculate the total cost
             price_per_sqft = product.iloc[0]['Price per Sq Ft']
             install_cost_per_sqft = product.iloc[0]['Installation Cost per Sq Ft']
             total_cost = (price_per_sqft + install_cost_per_sqft) * area_size
             if area_size < 1000:
-                total_cost = max(total_cost, 250)
+                total_cost = max(total_cost, 250)  # Minimum cost for small areas
             response = f"The estimated cost for {area_size} sq ft of {flooring_type} flooring is ${total_cost:.2f}."
 
-    elif "tips" in intent or "installation" in intent:
-        # Return installation tips
+    # Provide tips for flooring installation
+    elif "tips" in user_input or "installation" in user_input:
         response = (
             "Here are some tips for flooring installation:\n"
             "1. Make sure the subfloor is clean, level, and dry.\n"
@@ -88,13 +84,23 @@ def chat():
         )
 
     else:
-        # Default response for unclear intents
-        response = "I'm here to help with flooring products, installation costs, or general tips. Please clarify your request."
+        # If the input is unrecognized, show what the bot can do
+        response = handle_error(user_input)
 
     return jsonify({"response": response})
 
+# Error handling function
+def handle_error(user_input):
+    return (
+        "I'm sorry, I don't have the information necessary to complete that request. "
+        "I am able to assist with the following:\n"
+        "1. Providing information about available flooring types.\n"
+        "2. Showing products under a specific flooring type.\n"
+        "3. Estimating costs based on flooring type and area size.\n"
+        "4. Offering tips for flooring installation.\n"
+        "Please clarify your request or ask about one of these options."
+    )
 
 if __name__ == '__main__':
-    # Get the port from the environment variable (default to 5000 if not set)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
