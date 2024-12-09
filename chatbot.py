@@ -6,7 +6,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 
 # Load your flooring data
-flooring_data = pd.read_csv('/Users/dombrugioni/Desktop/CPSC_298_FinalProject/sample_flooring_products.csv')
+flooring_data = pd.read_csv('sample_flooring_products.csv')
 
 # Set up OpenAI API key (I provided mine in case you don't have one)
 openai.api_key = "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"
