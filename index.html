@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Flooring Chatbot</title>
+</head>
+<body>
+    <h1>Flooring Chatbot</h1>
+    <textarea id="userInput" placeholder="Ask me about flooring..."></textarea>
+    <button onclick="sendMessage()">Send</button>
+    <div id="response"></div>
+
+    <script>
+        async function sendMessage() {
+            const userInput = document.getElementById("userInput").value;
+            const responseDiv = document.getElementById("response");
+
+            responseDiv.innerHTML = "Processing...";
+            const response = await fetch("http://127.0.0.1:5000/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: userInput })
+            });
+            const data = await response.json();
+            responseDiv.innerHTML = data.response;
+        }
+    </script>
+</body>
+</html>
